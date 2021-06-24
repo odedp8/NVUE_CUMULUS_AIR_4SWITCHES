@@ -1,0 +1,21 @@
+- set:
+    interface:
+      swp8:
+        bridge:
+          domain:
+            br_default:
+              access: 10
+        type: swp
+      swp1:
+        bridge:
+          domain:
+            br_default: {}
+        type: swp
+    platform:
+      hostname:
+        value: leaf1
+    bridge:
+      domain:
+        br_default:
+          vlan:
+            '10': {}
