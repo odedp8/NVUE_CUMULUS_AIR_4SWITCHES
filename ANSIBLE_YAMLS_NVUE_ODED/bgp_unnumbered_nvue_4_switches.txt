@@ -1,0 +1,128 @@
+BGP SPINE3  BGP SPINE3 
+
+sudo rm /etc/nvue.d/startup.yaml
+nv config apply startup
+
+nv set interface lo ip address 172.16.100.3/32 
+nv config apply
+
+
+nv set interface swp1-2
+nv config apply
+
+
+
+
+
+nv set router bgp autonomous-system 65100
+nv set router bgp router-id 172.16.100.3
+nv config apply
+
+nv set vrf default router bgp peer swp1 remote-as external
+nv set vrf default router bgp peer swp2 remote-as external
+nv config apply
+
+
+
+nv set vrf default router bgp address-family ipv4-unicast static-network 172.16.100.3/32
+nv config apply 
+
+BGP SPINE4  BGP SPINE4 
+
+nv set interface lo ip address 172.16.100.4/32 
+nv config apply
+
+
+nv set interface swp1-2
+nv config apply
+
+
+
+
+
+nv set router bgp autonomous-system 65100
+nv set router bgp router-id 172.16.100.4
+nv config apply
+
+nv set vrf default router bgp peer swp1 remote-as external
+nv set vrf default router bgp peer swp2 remote-as external
+nv config apply
+
+
+
+nv set vrf default router bgp address-family ipv4-unicast static-network 172.16.100.4/32
+nv config apply 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+BGP LEAF1   BGP LEAF1 
+
+nv set interface lo ip address 172.16.100.1/32 
+nv config apply
+
+
+nv set interface swp1-2
+nv config apply
+
+
+
+
+
+nv set router bgp autonomous-system 65101
+nv set router bgp router-id 172.16.100.1
+nv config apply
+
+nv set vrf default router bgp peer swp1 remote-as external
+nv set vrf default router bgp peer swp2 remote-as external
+nv config apply
+
+
+
+nv set vrf default router bgp address-family ipv4-unicast static-network 172.16.100.1/32
+nv config apply 
+
+BGP LEAF1   BGP LEAF2 
+
+nv set interface lo ip address 172.16.100.2/32 
+nv config apply
+
+
+nv set interface swp1-2
+nv config apply
+
+
+
+
+
+nv set router bgp autonomous-system 65102
+nv set router bgp router-id 172.16.100.2
+nv config apply
+
+nv set vrf default router bgp peer swp1 remote-as external
+nv set vrf default router bgp peer swp2 remote-as external
+nv config apply
+
+nv set vrf default router bgp address-family ipv4-unicast static-network 172.16.100.2/32
+nv config apply

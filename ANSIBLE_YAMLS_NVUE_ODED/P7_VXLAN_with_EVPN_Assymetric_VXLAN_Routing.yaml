@@ -1,0 +1,366 @@
+#  ____  ____   __    ___  ____  __  ___  ____    ____ 
+# (  _ \(  _ \ / _\  / __)(_  _)(  )/ __)(  __)  (__  )
+#  ) __/ )   //    \( (__   )(   )(( (__  ) _)     / / 
+# (__)  (__\_)\_/\_/ \___) (__) (__)\___)(____)   (_/   
+                                        
+# ╔═╗╦═╗╔═╗╦ ╦╔═╗  ╔═╗
+# ║ ╦╠╦╝║ ║║ ║╠═╝  ╠═╣
+# ╚═╝╩╚═╚═╝╚═╝╩    ╩ ╩
+
+################################################################
+# Task 0:  Reset configurations and configure VXLAN with EVPN  #
+################################################################
+
+# Reset servers configurations
+- name: Clear group A servers old configurations
+  hosts: group_a_servers
+  tasks:
+    - name: Clear eth2 interface existing IP
+      command: ifconfig eth2 0.0.0.0
+    
+    - name: Clear static routes for network 172.30.0.0/16
+      command: ip route del 172.30.0.0/16
+      ignore_errors: yes         
+
+# Clear old switch configurations
+- name: Clear group A switches old configurations
+  hosts: cumulus_group_a_switches
+  tasks: 
+    - name: delete old NCLU commands
+      command: net del all
+
+    - name: commit
+      command: net commit
+      ignore_errors: yes   
+
+##################
+### ENABLE FRR ###
+##################
+
+# enable zebra on the /etc/frr/daemons file
+- hosts: cumulus_group_a_switches
+  tasks:
+    - name: enable Zebra
+      lineinfile:
+         path: /etc/frr/daemons
+         regexp: '^zebra='
+         line: 'zebra=yes'
+      become: yes
+
+# enable bgp daemon
+    - name: enable BGP
+      lineinfile:
+         path: /etc/frr/daemons
+         regexp: '^bgpd='
+         line: 'bgpd=yes'
+      become: yes
+
+# restart FRR service
+- hosts: cumulus_group_a_switches
+  tasks: 
+    - name: Restart FRR service
+      command: systemctl restart frr
+      ignore_errors: yes
+      become: yes
+
+
+################################
+### Configure BGP Unnumbered ###
+################################
+
+# Configurations on Spines
+- hosts: cumulus_group_a_spines
+  tasks:
+
+   - name: Configure AS 65100
+     nclu:
+       commands:
+         - add bgp autonomous-system 65100
+       commit: false
+
+   - name: Form eBGP neighborship with leaves
+     nclu:
+       commands:
+         - add bgp neighbor swp1-2 interface remote-as external       
+       commit: true
+
+
+# Configurations on Leaves
+- hosts: cl-leaf1a
+  tasks:
+
+   - name: Configure AS 65101 and form eBGP neighborship with spines
+     nclu:
+       commands:
+         - add bgp autonomous-system 65101
+         - add bgp neighbor swp1-2 interface remote-as external
+       commit: true
+
+- hosts: cl-leaf2a
+  tasks:
+
+   - name: Configure AS 65102 and form eBGP neighborship with spines
+     nclu:
+       commands:
+         - add bgp autonomous-system 65102
+         - add bgp neighbor swp1-2 interface remote-as external
+       commit: true
+
+
+#####################################
+### Configure Loopback Interfaces ###
+#####################################
+
+# Configurations on Leaves
+- hosts: cl-leaf1a
+  tasks:
+   - name: Create a loopback interface and advertise its prefix in the BGP process
+     nclu:
+       commands:
+         - add loopback lo ip address 172.30.100.1/32
+         - add bgp network 172.30.100.1/32
+       commit: true
+
+- hosts: cl-leaf2a
+  tasks:
+   - name: Create a loopback interface and advertise its prefix in the BGP process
+     nclu:
+       commands:
+         - add loopback lo ip address 172.30.100.2/32
+         - add bgp network 172.30.100.2/32
+       commit: true
+
+# Configurations on Spines
+- hosts: cl-spine3a
+  tasks:
+   - name: Create a loopback interface and advertise its prefix in the BGP process
+     nclu:
+       commands:
+         - add loopback lo ip address 172.30.100.3/32
+         - add bgp network 172.30.100.3/32
+       commit: true
+
+- hosts: cl-spine4a
+  tasks:
+   - name: Create a loopback interface and advertise its prefix in the BGP process
+     nclu:
+       commands:
+         - add loopback lo ip address 172.30.100.4/32
+         - add bgp network 172.30.100.4/32
+       commit: true
+
+####################################
+### Advertise local IP prefixes  ###
+####################################
+
+# Configurations on Leaves
+- hosts: cl-leaf1a
+  tasks:
+   - name: Advertise leaf local prefixes
+     nclu:
+       commands:
+         - add interface swp8 ip address 172.30.18.1/24
+         - add interface swp9 ip address 172.30.19.1/24
+         - add bgp network 172.30.18.0/24
+         - add bgp network 172.30.19.0/24
+       commit: true
+
+- hosts: cl-leaf2a
+  tasks:
+   - name: Advertise leaf local prefixes
+     nclu:
+       commands:
+         - add interface swp8 ip address 172.30.28.1/24
+         - add interface swp9 ip address 172.30.29.1/24
+         - add bgp network 172.30.28.0/24
+         - add bgp network 172.30.29.0/24
+       commit: true
+
+
+#########################
+### Configuring VLANs ###
+#########################
+
+# Clear host facing interfaces configurations
+- name: Clear host facing port configuration
+  hosts: cumulus_group_a_leaves
+  tasks: 
+    - name: reset configurations on swp8-9
+      command: net del interface swp8-9
+
+# Configurations on Leaves
+- hosts: cl-leaf1a
+  tasks:
+
+   - name: Configure host facing ports
+     nclu:
+       commands:
+         - add bridge bridge vids 10,20  
+         - add interface swp8 bridge access 10
+         - add interface swp9 bridge access 20
+       commit: true
+
+- hosts: cl-leaf2a
+  tasks:
+
+   - name: Configure host facing ports
+     nclu:
+       commands:
+         - add bridge bridge vids 100,200  
+         - add bridge bridge ports swp8-9
+         - add interface swp8 bridge access 100
+         - add interface swp9 bridge access 200
+       commit: true
+
+
+
+#########################
+### Configuring VNIs  ###
+#########################
+
+## Configurations on Leaves
+
+- hosts: cl-leaf1a
+  tasks:
+
+   - name: Create VXLAN interface
+     nclu:
+       commands:
+         - add vxlan VNI-10 vxlan id 10
+         - add vxlan VNI-20 vxlan id 20
+       commit: false
+    
+   - name: Map VXLAN to VLAN
+     nclu:
+       commands:
+         - add vxlan VNI-10 bridge access 10
+         - add vxlan VNI-20 bridge access 20
+       commit: false
+
+   - name: Configure VXLAN local tunnel endpoint
+     nclu:
+       commands:
+         - add vxlan VNI-10 vxlan local-tunnelip 172.30.100.1
+         - add vxlan VNI-20 vxlan local-tunnelip 172.30.100.1
+       commit: true
+
+- hosts: cl-leaf2a
+  tasks:
+
+   - name: Create VXLAN interface
+     nclu:
+       commands:
+         - add vxlan VNI-10 vxlan id 10
+         - add vxlan VNI-20 vxlan id 20
+       commit: false
+    
+   - name: Map VXLAN to VLAN
+     nclu:
+       commands:
+         - add vxlan VNI-10 bridge access 100
+         - add vxlan VNI-20 bridge access 200
+       commit: false
+
+   - name: Configure VXLAN local tunnel endpoint
+     nclu:
+       commands:
+         - add vxlan VNI-10 vxlan local-tunnelip 172.30.100.2
+         - add vxlan VNI-20 vxlan local-tunnelip 172.30.100.2
+       commit: true
+
+
+######################
+### Configure EVPN ###
+######################
+
+# Configurations on Spines
+- hosts: cumulus_group_a_spines
+  tasks:
+   - name: Form EVPN neighborship with leaves
+     nclu:
+       commands:
+         - add bgp evpn neighbor swp1-2 activate
+       commit: true
+
+# Configurations on leaves
+- hosts: cumulus_group_a_leaves
+  tasks:
+   - name: Form EVPN neighborship with spines and advertise VNIs
+     nclu:
+       commands:
+         - add bgp evpn neighbor swp1-2 activate
+         - add bgp evpn advertise-all-vni
+       commit: true
+
+
+#########################################
+# Task 1: Configure servers IP settings #
+#########################################
+
+# Configure hosts NIs  
+
+- name: Configure mtlacad01
+  hosts: mtlacad01
+  tasks: 
+    - name: Configure IP address
+      command: ifconfig eth2 172.30.10.18/24
+
+- name: Configure mtlacad02
+  hosts: mtlacad02
+  tasks: 
+    - name: Configure IP address
+      command: ifconfig eth2 172.30.20.19/24
+
+- name: Configure mtlacad03
+  hosts: mtlacad03
+  tasks: 
+    - name: Configure IP address
+      command: ifconfig eth2 172.30.10.28/24
+
+- name: Configure mtlacad04
+  hosts: mtlacad04
+  tasks: 
+    - name: Configure IP address
+      command: ifconfig eth2 172.30.20.29/24
+
+# Configure default gateways
+- name: Add static route entry for VLAN 10
+  hosts: mtlacad01, mtlacad03
+  tasks:
+    - name: Add default gateway for 172.30.0.0/16
+      command: ip route add 172.30.0.0/16 dev eth2 via 172.30.10.254
+    
+- name: Add static route entry for VLAN 20
+  hosts: mtlacad02, mtlacad04
+  tasks:
+    - name: Add default gateway for 172.30.0.0/16
+      command: ip route add 172.30.0.0/16 dev eth2 via 172.30.20.254
+
+#######################################
+# Task 2: Configure SVIs on the VTEPs #
+#######################################
+
+# Configurations on Leaves
+- hosts: cl-leaf1a
+  tasks:
+
+   - name: Configure SVIs
+     nclu:
+       commands:
+         - add vlan 10 ip address 172.30.10.252/24
+         - add vlan 10 ip address-virtual 00:00:5e:00:01:01 172.30.10.254/24
+         - add vlan 20 ip address 172.30.20.252/24
+         - add vlan 20 ip address-virtual 00:00:5e:00:01:02 172.30.20.254/24
+       commit: true
+
+- hosts: cl-leaf2a
+  tasks:
+
+   - name: Configure SVIs
+     nclu:
+       commands:
+         - add vlan 100 ip address 172.30.10.253/24
+         - add vlan 100 ip address-virtual 00:00:5e:00:01:01 172.30.10.254/24
+         - add vlan 200 ip address 172.30.20.253/24
+         - add vlan 200 ip address-virtual 00:00:5e:00:01:02 172.30.20.254/24
+       commit: true

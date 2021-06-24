@@ -1,0 +1,110 @@
+#  ____  ____   __    ___  ____  __  ___  ____    ____ 
+# (  _ \(  _ \ / _\  / __)(_  _)(  )/ __)(  __)  ( __ \
+#  ) __/ )   //    \( (__   )(   )(( (__  ) _)    (__ (
+# (__)  (__\_)\_/\_/ \___) (__) (__)\___)(____)  (____/
+
+# ╔═╗╦═╗╔═╗╦ ╦╔═╗  ╔═╗
+# ║ ╦╠╦╝║ ║║ ║╠═╝  ╠═╣
+# ╚═╝╩╚═╚═╝╚═╝╩    ╩ ╩                                        
+
+##################################
+# Task 0:  Reset configurations  #
+##################################
+
+# Reset servers configurations
+- name: Clear group A servers old configurations
+  hosts: group_a_servers
+  tasks:
+    - name: Clear eth2 interface existing IP
+      command: ifconfig eth2 0.0.0.0
+    
+    - name: Clear static routes for network 172.30.0.0/16
+      command: ip route del 172.30.0.0/16
+      ignore_errors: yes         
+
+# Clear old switch configurations
+- name: Clear group A switches old configurations
+  hosts: cumulus_group_a_switches
+  tasks: 
+    - name: delete old NCLU commands
+      command: net del all
+
+    - name: commit
+      command: net commit
+      ignore_errors: yes    
+
+##########################################
+# Task 1:  Configure VLANs and Trunking  #
+##########################################
+
+# Configurations on all group switches 
+- hosts: cumulus_group_a_switches
+  tasks:
+
+   - name: Create a bridge and set inter switch links as trunk ports
+     nclu:
+       commands:
+         - add bridge bridge ports swp1-2       
+       commit: false
+
+   - name: Create VLANs
+     nclu:
+       commands:
+         - add bridge bridge vids 2,3       
+       commit: true
+
+- hosts: cumulus_group_a_leaves
+  tasks:
+   - name: Set the host-facing ports as access ports in VLAN 1 and COMMIT changes
+     nclu:
+       commands:
+         - add bridge bridge ports swp8-9
+         - add interface swp8 bridge access 2
+         - add interface swp9 bridge access 3
+       commit: true 
+
+
+##########################################
+# Task 2: Configure servers IP settings  #
+##########################################   
+
+# Configure hosts NIs  
+- name: Configure mtlacad01
+  hosts: mtlacad01
+  tasks: 
+    - name: Configure IP address
+      command: ifconfig eth2 172.30.12.18/24  
+    
+- name: Configure mtlacad02
+  hosts: mtlacad02
+  tasks: 
+    - name: Configure IP address
+      command: ifconfig eth2 172.30.13.19/24
+    
+- name: Configure mtlacad03
+  hosts: mtlacad03
+  tasks: 
+    - name: Configure IP address
+      command: ifconfig eth2 172.30.12.28/24
+
+- name: Configure mtlacad04
+  hosts: mtlacad04
+  tasks: 
+    - name: Configure IP address
+      command: ifconfig eth2 172.30.13.29/24
+
+
+# Configure default gateway for each VLAN
+- name: Add static route entry for VLAN 2
+  hosts: mtlacad01, mtlacad03
+  tasks:
+    - name: Add default gateway for 172.30.0.0/16
+      command: ip route add 172.30.0.0/16 dev eth2 via 172.30.12.254
+    
+- name: Add static route entry for VLAN 3
+  hosts: mtlacad02, mtlacad04
+  tasks:
+    - name: Add default gateway for 172.30.0.0/16
+      command: ip route add 172.30.0.0/16 dev eth2 via 172.30.13.254
+
+
